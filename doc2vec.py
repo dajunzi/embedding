@@ -90,7 +90,7 @@ def build_dataset(filename, vocabulary_max=50000):
 
 
 eval_words = ['marital-status#Married-spouse-absent', 'education#5th-6th', 'workclass#State-gov',
-              'native-country#Germany', 'occupation#Tech-support']
+              'native-country#Germany', 'native-country#China', 'occupation#Tech-support']
 
 
 class Doc2Vec:
@@ -140,14 +140,9 @@ class Doc2Vec:
             self.train_labels = tf.placeholder(tf.int32, shape=[self.batch_size, 1])
 
             # Variables.
-            self.wrd_embeddings = tf.Variable(
-                tf.random_uniform([self.wrd_size, self.wrd_embed_dim], -1.0, 1.0))
-            self.doc_embeddings = tf.Variable(
-                tf.random_uniform([self.doc_size, self.doc_embed_dim], -1.0, 1.0))
-
-            self.weights = tf.Variable(tf.truncated_normal([self.wrd_size, self.wrd_embed_dim + self.doc_embed_dim],
-                                                           stddev=1.0 / math.sqrt(
-                                                               self.wrd_embed_dim + self.doc_embed_dim)))
+            self.wrd_embeddings = tf.Variable(tf.random_uniform([self.wrd_size, self.wrd_embed_dim], -1.0, 1.0))
+            self.doc_embeddings = tf.Variable(tf.random_uniform([self.doc_size, self.doc_embed_dim], -1.0, 1.0))
+            self.weights = tf.Variable(tf.zeros([self.wrd_size, self.wrd_embed_dim + self.doc_embed_dim]))
             self.biases = tf.Variable(tf.zeros([self.wrd_size]))
 
             # Embedding.
@@ -305,7 +300,7 @@ class Doc2Vec:
         return estimator
 
 
-a = Doc2Vec('adult_p.txt', n_steps=600001, doc_embed_dim=10, wrd_embed_dim=10)
+a = Doc2Vec('adult_p.txt', n_steps=600001, doc_embed_dim=64, wrd_embed_dim=64)
 a.fit()
 
 # print('document_size {}'.format(a.document_size))
