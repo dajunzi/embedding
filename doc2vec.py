@@ -140,9 +140,10 @@ class Doc2Vec:
             self.train_labels = tf.placeholder(tf.int32, shape=[self.batch_size, 1])
 
             # Variables.
-            self.wrd_embeddings = tf.Variable(tf.random_uniform([self.wrd_size, self.wrd_embed_dim], -1.0, 1.0))
-            self.doc_embeddings = tf.Variable(tf.random_uniform([self.doc_size, self.doc_embed_dim], -1.0, 1.0))
-            self.weights = tf.Variable(tf.zeros([self.wrd_size, self.wrd_embed_dim + self.doc_embed_dim]))
+            self.wrd_embeddings = tf.Variable(tf.zeros([self.wrd_size, self.wrd_embed_dim]))
+            self.doc_embeddings = tf.Variable(tf.zeros([self.doc_size, self.doc_embed_dim]))
+            self.weights = tf.Variable(
+                tf.random_uniform([self.wrd_size, self.wrd_embed_dim + self.doc_embed_dim], -0.1, 0.1))
             self.biases = tf.Variable(tf.zeros([self.wrd_size]))
 
             # Embedding.
