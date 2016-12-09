@@ -108,7 +108,7 @@ class Doc2Vec:
                  n_neg_samples=5):
 
         self.docs, self.doc2id, self.id2doc, self.wrd2id, self.id2wrd = build_dataset(filename, wrd_size_max)
-        self.doc_size = len(self.id2doc)
+        self.doc_size = len(self.doc2id)
         self.wrd_size = len(self.wrd2id)
         print('doc size {}, word size {}'.format(self.doc_size, self.wrd_size))
         print('Sample doc: doc id {}, word id {}\n words {}'.format(self.id2doc[0], self.docs[0],
@@ -350,6 +350,7 @@ print(version, 'embedding')
 if FLAGS.output is None:
     FLAGS.output = FLAGS.input.split('.')[0] + '_' + version
 
-a = Doc2Vec(FLAGS.input, batch_size=FLAGS.batch_size, doc_embed_dim=FLAGS.doc_embed_dim, wrd_embed_dim=FLAGS.wrd_embed_dim)
+a = Doc2Vec(FLAGS.input, batch_size=FLAGS.batch_size, doc_embed_dim=FLAGS.doc_embed_dim,
+            wrd_embed_dim=FLAGS.wrd_embed_dim)
 a.fit(n_epochs=FLAGS.n_epochs)
 a.release(prefix=FLAGS.output)
