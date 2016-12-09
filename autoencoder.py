@@ -52,7 +52,8 @@ np.random.seed(SEED)
 #     return docs, count, dictionary, reverse_dictionary
 
 
-def build_dataset(filename, vocabulary_max=50000):
+def build_dataset(filename, vocabulary_max=10000):
+    print('loading data...')
     doc2id = dict()
     docs_str = list()
     wrds_str = list()
@@ -65,6 +66,8 @@ def build_dataset(filename, vocabulary_max=50000):
 
     count = [['UNK', -1]]
     count.extend(collections.Counter(wrds_str).most_common(vocabulary_max - 1))
+    del wrds_str
+
     wrd2id = dict()
     for wrd, _ in count:
         wrd2id[wrd] = len(wrd2id)
@@ -74,27 +77,26 @@ def build_dataset(filename, vocabulary_max=50000):
     id2doc = dict(zip(doc2id.values(), doc2id.keys()))
     assert len(doc2id) == len(id2doc)
 
-    dim = len(wrd2id)
     docs = list()
     for doc_str in docs_str:
-        doc = np.zeros(dim, dtype=np.int32)
+        doc = list()
         for wrd_str in doc_str:
             idx = wrd2id[wrd_str] if wrd_str in wrd2id else 0  # dictionary['UNK']
-            doc[idx] = 1  # binary or histogram?
+            doc.append(idx)
         docs.append(doc)
 
     return docs, doc2id, id2doc, wrd2id, id2wrd
 
 
-eval_words = ['marital-status#Married-spouse-absent', 'education#5th-6th', 'workclass#State-gov',
-              'native-country#Germany', 'native-country#China', 'occupation#Tech-support']
+# eval_words = ['marital-status#Married-spouse-absent', 'education#5th-6th', 'workclass#State-gov',
+#               'native-country#Germany', 'native-country#China', 'occupation#Tech-support']
 
 
 class Autoencoder:
     def __init__(self, filename,
                  batch_size=1024,
-                 embed_dim_1=128,
-                 embed_dim_2=64,
+                 embed_dim_1=256,
+                 embed_dim_2=128,
                  wrd_size_max=10000,
                  learning_rate=0.01):
 
@@ -102,8 +104,9 @@ class Autoencoder:
         self.doc_size = len(self.doc2id)
         self.wrd_size = len(self.wrd2id)
         print('doc size {}, word size {}'.format(self.doc_size, self.wrd_size))
-        print('Sample doc: doc id {}, word {}\n total non-zeros {}'.format(self.id2doc[0], self.docs[0],
-                                                                           np.sum(self.docs[0])))
+        print('Sample doc: doc id {}, word id {}\n words {}'.format(self.id2doc[0], self.docs[0],
+                                                                    [self.id2wrd[wrd] for wrd in self.docs[0]]))
+        print('network structure {}'.format([self.wrd_size, embed_dim_1, embed_dim_2]))
 
         # bind params to class
         self.batch_size = batch_size
@@ -111,7 +114,7 @@ class Autoencoder:
         self.embed_dim_2 = embed_dim_2
         self.learning_rate = learning_rate
         # self.eval_examples = np.random.choice(self.wrd_size, size=10, replace=False)
-        self.eval_examples = [self.wrd2id[wrd] for wrd in eval_words]
+        # self.eval_examples = [self.wrd2id[wrd] for wrd in eval_words]
 
         self._init_graph()
         self.sess = tf.Session(graph=self.graph)
@@ -143,8 +146,7 @@ class Autoencoder:
         with self.graph.as_default(), tf.device('/cpu:0'):
             # Set graph level random seed
             tf.set_random_seed(SEED)
-
-            self.X = tf.placeholder("float", [self.batch_size, self.wrd_size])
+            self.X = tf.placeholder("float", [None, self.wrd_size])
 
             # Variables.
             self.weights = {
@@ -167,11 +169,11 @@ class Autoencoder:
             self.optimizer = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss)
 
             # Similarity.
-            self.wrd_code = self.encoder(tf.constant(np.identity(self.wrd_size), dtype=tf.float32))
-            norm = tf.sqrt(tf.reduce_sum(tf.square(self.wrd_code), 1, keep_dims=True))
-            normalized_embeddings = self.wrd_code / norm
-            valid_embeddings = tf.nn.embedding_lookup(normalized_embeddings, self.eval_examples)
-            self.similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True)
+            # self.wrd_code = self.encoder(tf.constant(np.identity(self.wrd_size), dtype=tf.float32))
+            # norm = tf.sqrt(tf.reduce_sum(tf.square(self.wrd_code), 1, keep_dims=True))
+            # normalized_embeddings = self.wrd_code / norm
+            # valid_embeddings = tf.nn.embedding_lookup(normalized_embeddings, self.eval_examples)
+            # self.similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True)
 
             # normalization
             # norm_w = tf.sqrt(tf.reduce_sum(tf.square(self.wrd_embeddings), 1, keep_dims=True))
@@ -214,39 +216,90 @@ class Autoencoder:
                 average_loss = 0
 
             if step % 10000 == 0:
-                sim, wrd_code, recode = session.run([self.similarity, self.wrd_code, self.Y], feed_dict={self.X: batch})
+                recode = session.run(self.Y, feed_dict={self.X: batch})
                 print('error of the first case: {}'.format(sum(abs(batch[0] - recode[0]) > 0.01)))
-                for i in xrange(len(self.eval_examples)):
-                    valid_word = self.id2wrd[self.eval_examples[i]]
-                    code = wrd_code[self.eval_examples[i]]
-                    top_k = 8  # number of nearest neighbors
-                    nearest = (-sim[i, :]).argsort()[1:top_k + 1]
-                    log_str = "Nearest to %s:" % valid_word
-                    for k in xrange(top_k):
-                        close_word = self.id2wrd[nearest[k]]
-                        log_str = "%s %s," % (log_str, close_word)
-                    print(log_str)
-                    print(code)
-        # update normalization
-        # self.wrd_embeddings = session.run(self.normalized_word_embeddings)
-        # self.doc_embeddings = session.run(self.normalized_doc_embeddings)
+                # if step % 10000 == 0:
+                #     sim, wrd_code, recode = session.run([self.similarity, self.wrd_code, self.Y],
+                #                                         feed_dict={self.X: batch})
+                #     print('error of the first case: {}'.format(sum(abs(batch[0] - recode[0]) > 0.01)))
+                #     for i in xrange(len(self.eval_examples)):
+                #         valid_word = self.id2wrd[self.eval_examples[i]]
+                #         code = wrd_code[self.eval_examples[i]]
+                #         top_k = 8  # number of nearest neighbors
+                #         nearest = (-sim[i, :]).argsort()[1:top_k + 1]
+                #         log_str = "Nearest to %s:" % valid_word
+                #         for k in xrange(top_k):
+                #             close_word = self.id2wrd[nearest[k]]
+                #             log_str = "%s %s," % (log_str, close_word)
+                #         print(log_str)
+                #         print(code)
         return self
+
+    def expand(self, idx):
+        arr = np.zeros(self.wrd_size, dtype=np.int32)
+        for x in self.docs[idx]:
+            arr[x] = 1
+        return arr
 
     def generate_batch(self):
         batch = np.ndarray(shape=(self.batch_size, self.wrd_size), dtype=np.int32)
         for i in xrange(self.batch_size):
-            batch[i] = self.docs[self.doc_idx]
+            # batch[i] = self.docs[self.doc_idx]
+            batch[i] = self.expand(self.doc_idx)
             self.doc_idx = (self.doc_idx + 1) % self.doc_size
             self.epoch += (self.doc_idx == 0)
         return batch
 
     def release(self, prefix=''):
         fdoc = open(prefix + '_doc.txt', 'w')
-        doc_code = self.sess.run(self.code, feed_dict={self.X: self.docs})
+        init = idx = 0
+        batch = np.zeros(shape=(self.batch_size, self.wrd_size), dtype=np.int32)
+        while init + idx < self.doc_size:
+            batch[idx] = self.expand(init + idx)
+            idx += 1
+            if idx == self.batch_size:
+                doc_code = self.sess.run(self.code, feed_dict={self.X: batch})
+                for i in xrange(self.batch_size):
+                    fdoc.write(self.id2doc[init + i] + ':')
+                    fdoc.write(",".join(map(str, doc_code[i])) + '\n')
+                init += self.batch_size
+                idx = 0
+
+        doc_code = self.sess.run(self.code, feed_dict={self.X: batch})
+        for i in xrange(idx):
+            fdoc.write(self.id2doc[init + i] + ':')
+            fdoc.write(",".join(map(str, doc_code[i])) + '\n')
+
+        fdoc.close()
+        # fdoc = open(prefix + '_doc.txt', 'w')
+        # self.doc_idx = 0
+        # batch = self.generate_batch()
+        # while self.doc_idx >= self.batch_size:
+        #     doc_code = self.sess.run(self.code, feed_dict={self.X: batch})
+        #     for i in xrange(self.batch_size):
+        #         fdoc.write(self.id2doc[self.doc_idx - self.batch_size + i] + ':')
+        #         fdoc.write(",".join(map(str, doc_code[i])) + '\n')
+        #     batch = self.generate_batch()
+        #
+        # doc_code = self.sess.run(self.code, feed_dict={self.X: batch})
+        # for i in xrange(self.batch_size - self.doc_idx):
+        #     fdoc.write(self.id2doc[self.doc_idx - self.batch_size + i + self.doc_size] + ':')
+        #     fdoc.write(",".join(map(str, doc_code[i])) + '\n')
+        #
+        # fdoc.close()
+
+    def release_all(self, prefix=''):
+        fdoc = open(prefix + '_doc.txt', 'w')
+
+        batch = np.ndarray(shape=(self.doc_size, self.wrd_size), dtype=np.int32)
+        for i in xrange(self.doc_size):
+            batch[i] = self.expand(i)
+        doc_code = self.sess.run(self.code, feed_dict={self.X: batch})
 
         for i in xrange(self.doc_size):
             fdoc.write(self.id2doc[i] + ':')
             fdoc.write(",".join(map(str, doc_code[i])) + '\n')
+
         fdoc.close()
 
 
@@ -257,7 +310,7 @@ flags.DEFINE_string('input', 'adult_p.txt', 'input file')
 flags.DEFINE_string('output', None, 'output files prefix')
 flags.DEFINE_integer('embed_dim_1', 256, 'size of first hidden layer')
 flags.DEFINE_integer('embed_dim_2', 128, 'size of second hidden layer')
-flags.DEFINE_integer('n_epochs', 1000, 'number of epochs')
+flags.DEFINE_integer('n_epochs', 500, 'number of epochs')
 flags.DEFINE_integer('batch_size', 100, 'size of each batch')
 flags.DEFINE_integer('wrd_size_max', 10000, 'size of word dictionary')
 

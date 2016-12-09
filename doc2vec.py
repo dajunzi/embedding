@@ -57,6 +57,7 @@ np.random.seed(SEED)
 
 
 def build_dataset(filename, vocabulary_max=50000):
+    print('loading data...')
     doc2id = dict()
     docs_str = list()
     wrds_str = list()
@@ -69,6 +70,8 @@ def build_dataset(filename, vocabulary_max=50000):
 
     count = [['UNK', -1]]
     count.extend(collections.Counter(wrds_str).most_common(vocabulary_max - 1))
+    del wrds_str
+
     wrd2id = dict()
     for wrd, _ in count:
         wrd2id[wrd] = len(wrd2id)
@@ -82,11 +85,8 @@ def build_dataset(filename, vocabulary_max=50000):
     for doc_str in docs_str:
         doc = list()
         for wrd_str in doc_str:
-            if wrd_str in wrd2id:
-                index = wrd2id[wrd_str]
-            else:
-                index = 0  # dictionary['UNK']
-            doc.append(index)
+            idx = wrd2id[wrd_str] if wrd_str in wrd2id else 0  # dictionary['UNK']
+            doc.append(idx)
         docs.append(doc)
 
     return docs, doc2id, id2doc, wrd2id, id2wrd
@@ -112,8 +112,7 @@ class Doc2Vec:
         self.wrd_size = len(self.wrd2id)
         print('doc size {}, word size {}'.format(self.doc_size, self.wrd_size))
         print('Sample doc: doc id {}, word id {}\n words {}'.format(self.id2doc[0], self.docs[0],
-                                                                    [self.id2wrd[wrd] for wrd in
-                                                                     self.docs[0]]))
+                                                                    [self.id2wrd[wrd] for wrd in self.docs[0]]))
 
         # bind params to class
         self.batch_size = batch_size
