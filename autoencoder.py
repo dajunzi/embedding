@@ -184,7 +184,7 @@ class Autoencoder:
 
             # init op
             self.init_op = tf.initialize_all_variables()
-            self.saver = tf.train.Saver()
+            # self.saver = tf.train.Saver()
 
     def fit(self, n_epochs=10):
         print('Start model fitting (total {} epochs)'.format(n_epochs))

@@ -2,7 +2,6 @@ from __future__ import absolute_import
 from __future__ import print_function
 
 import os
-import math
 import random
 import json
 import collections
@@ -56,7 +55,7 @@ np.random.seed(SEED)
 #     return docs, count, dictionary, reverse_dictionary
 
 
-def build_dataset(filename, vocabulary_max=50000):
+def build_dataset(filename, vocabulary_max=10000):
     print('loading data...')
     doc2id = dict()
     docs_str = list()
@@ -101,7 +100,7 @@ class Doc2Vec:
                  batch_size=1024,
                  doc_embed_dim=128,
                  wrd_embed_dim=128,
-                 wrd_size_max=100000,
+                 wrd_size_max=10000,
                  loss_type='sampled_softmax_loss',
                  optimizer_type='Adagrad',
                  learning_rate=1.0,
@@ -184,7 +183,7 @@ class Doc2Vec:
 
             # init op
             self.init_op = tf.initialize_all_variables()
-            self.saver = tf.train.Saver()
+            # self.saver = tf.train.Saver()
 
     def fit(self, n_epochs=10):
         print('Start model fitting (total {} epochs)'.format(n_epochs))
@@ -340,8 +339,9 @@ flags.DEFINE_string('input', None, 'input file')
 flags.DEFINE_string('output', None, 'output files prefix')
 flags.DEFINE_integer('doc_embed_dim', 64, 'document embedding size')
 flags.DEFINE_integer('wrd_embed_dim', 64, 'word embedding size')
-flags.DEFINE_integer('n_epochs', 10, 'number of epochs')
+flags.DEFINE_integer('n_epochs', 100, 'number of epochs')
 flags.DEFINE_integer('batch_size', 1024, 'size of each batch')
+flags.DEFINE_integer('wrd_size_max', 10000, 'max size of vocabulary')
 
 version = 'wrd2vec' if FLAGS.doc_embed_dim == 0 else 'doc2vec'
 print(version, 'embedding')
@@ -350,6 +350,6 @@ if FLAGS.output is None:
     FLAGS.output = FLAGS.input.split('.')[0] + '_' + version
 
 a = Doc2Vec(FLAGS.input, batch_size=FLAGS.batch_size, doc_embed_dim=FLAGS.doc_embed_dim,
-            wrd_embed_dim=FLAGS.wrd_embed_dim)
+            wrd_embed_dim=FLAGS.wrd_embed_dim, wrd_size_max=FLAGS.wrd_size_max)
 a.fit(n_epochs=FLAGS.n_epochs)
 a.release(prefix=FLAGS.output)
