@@ -2,7 +2,6 @@ from __future__ import absolute_import
 from __future__ import print_function
 
 import os
-import math
 import random
 import json
 import collections
@@ -12,7 +11,7 @@ import tensorflow as tf
 from random import shuffle
 
 # Set random seeds
-SEED = 2016
+SEED = 20161202
 random.seed(SEED)
 np.random.seed(SEED)
 
@@ -56,67 +55,72 @@ np.random.seed(SEED)
 #     return docs, count, dictionary, reverse_dictionary
 
 
-def build_dataset(filename, vocabulary_max=50000):
-    doc_ids = list()
+def build_dataset(filename, vocabulary_max=10000):
+    print('loading data...')
+    doc2id = dict()
     docs_str = list()
     wrds_str = list()
     for line in open(filename):
         doc_id, val = line.rstrip().split(':')
         wrds = val.split(',')
-        doc_ids.append(doc_id)
+        doc2id[doc_id] = len(doc2id)
         docs_str.append(wrds)
         wrds_str.extend(wrds)
 
     count = [['UNK', -1]]
     count.extend(collections.Counter(wrds_str).most_common(vocabulary_max - 1))
+    del wrds_str
 
-    dictionary = dict()
+    wrd2id = dict()
+    cat2id = collections.defaultdict(list)
     for wrd, _ in count:
-        dictionary[wrd] = len(dictionary)
-    reverse_dictionary = dict(zip(dictionary.values(), dictionary.keys()))
+        idx = len(wrd2id)
+        wrd2id[wrd] = idx
+        cat2id[wrd.split('#')[0]].append(idx)
+    del cat2id['UNK']
+
+    id2wrd = dict(zip(wrd2id.values(), wrd2id.keys()))
+    assert len(wrd2id) == len(id2wrd)
+    id2doc = dict(zip(doc2id.values(), doc2id.keys()))
+    assert len(doc2id) == len(id2doc)
 
     docs = list()
     for doc_str in docs_str:
         doc = list()
         for wrd_str in doc_str:
-            if wrd_str in dictionary:
-                index = dictionary[wrd_str]
-            else:
-                index = 0  # dictionary['UNK']
-            doc.append(index)
+            idx = wrd2id[wrd_str] if wrd_str in wrd2id else 0  # dictionary['UNK']
+            doc.append(idx)
         docs.append(doc)
 
-    return docs, doc_ids, dictionary, reverse_dictionary
+    return docs, doc2id, id2doc, wrd2id, id2wrd, cat2id
 
 
-eval_words = ['marital-status#Married-spouse-absent', 'education#5th-6th', 'workclass#State-gov',
-              'native-country#Germany', 'occupation#Tech-support']
+# eval_words = ['education#5th-6th', 'workclass#State-gov',
+#               'native-country#Germany', 'native-country#China', 'occupation#Tech-support']
 
 
 class Doc2Vec:
     def __init__(self, filename,
                  batch_size=1024,
-                 window_size=5,
                  doc_embed_dim=128,
                  wrd_embed_dim=128,
-                 wrd_size_max=50000,
+                 wrd_size_max=10000,
                  loss_type='sampled_softmax_loss',
                  optimizer_type='Adagrad',
                  learning_rate=1.0,
                  n_neg_samples=5,
-                 n_steps=100001):
+                 eval_words=None):
 
-        self.docs, self.doc_ids, self.wrd_ids, self.reverse_wrd_ids = build_dataset(filename, wrd_size_max)
-        self.doc_size = len(self.doc_ids)
-        self.wrd_size = len(self.wrd_ids)
+        self.docs, self.doc2id, self.id2doc, self.wrd2id, self.id2wrd, self.cat2id = build_dataset(filename,
+                                                                                                   wrd_size_max)
+        self.doc_size = len(self.doc2id)
+        self.wrd_size = len(self.wrd2id)
         print('doc size {}, word size {}'.format(self.doc_size, self.wrd_size))
-        print('Sample doc: doc id {}, word id {}\n words {}'.format(self.doc_ids[0], self.docs[0],
-                                                                    [self.reverse_wrd_ids[wrd] for wrd in
-                                                                     self.docs[0]]))
+        print('Sample doc: doc id {}, word id {}\n words {}'.format(self.id2doc[0], self.docs[0],
+                                                                    [self.id2wrd[wrd] for wrd in self.docs[0]]))
 
         # bind params to class
         self.batch_size = batch_size
-        self.window_size = window_size
         self.doc_embed_dim = doc_embed_dim
         self.wrd_embed_dim = wrd_embed_dim
         self.loss_type = loss_type
@@ -124,11 +128,12 @@ class Doc2Vec:
 
         self.learning_rate = learning_rate
         self.n_neg_samples = n_neg_samples
-        self.n_steps = n_steps
-        self.eval_examples = [self.wrd_ids[wrd] for wrd in eval_words]
+        self.eval_examples = [self.wrd2id[wrd] for wrd in eval_words] if eval_words \
+            else np.random.choice(self.wrd_size, size=10, replace=False)
 
         self._init_graph()
         self.sess = tf.Session(graph=self.graph)
+        self.epoch = 0
         self.doc_idx = 0  # fetch training batch
 
     def _init_graph(self):
@@ -142,14 +147,10 @@ class Doc2Vec:
             self.train_labels = tf.placeholder(tf.int32, shape=[self.batch_size, 1])
 
             # Variables.
-            self.wrd_embeddings = tf.Variable(
-                tf.random_uniform([self.wrd_size, self.wrd_embed_dim], -1.0, 1.0))
-            self.doc_embeddings = tf.Variable(
-                tf.random_uniform([self.doc_size, self.doc_embed_dim], -1.0, 1.0))
-
-            self.weights = tf.Variable(tf.truncated_normal([self.wrd_size, self.wrd_embed_dim + self.doc_embed_dim],
-                                                           stddev=1.0 / math.sqrt(
-                                                               self.wrd_embed_dim + self.doc_embed_dim)))
+            self.wrd_embeddings = tf.Variable(tf.zeros([self.wrd_size, self.wrd_embed_dim]))
+            self.doc_embeddings = tf.Variable(tf.zeros([self.doc_size, self.doc_embed_dim]))
+            self.weights = tf.Variable(
+                tf.random_uniform([self.wrd_size, self.wrd_embed_dim + self.doc_embed_dim], -0.1, 0.1))
             self.biases = tf.Variable(tf.zeros([self.wrd_size]))
 
             # Embedding.
@@ -188,22 +189,25 @@ class Doc2Vec:
 
             # init op
             self.init_op = tf.initialize_all_variables()
-            self.saver = tf.train.Saver()
+            # self.saver = tf.train.Saver()
 
-    def fit(self):
+    def fit(self, n_epochs=10):
+        print('Start model fitting (total {} epochs)'.format(n_epochs))
         session = self.sess
         session.run(self.init_op)
 
+        step = 0
         average_loss = 0
         print("Initialized")
 
-        for step in xrange(self.n_steps):
+        while self.epoch < n_epochs:
             batch_docs, batch_context, batch_labels = self.generate_batch()
             feed_dict = {self.train_docs: batch_docs,
                          self.train_context: batch_context,
                          self.train_labels: batch_labels}
 
             _, l = session.run([self.optimizer, self.loss], feed_dict=feed_dict)
+            step += 1
 
             # # debug
             # _, l, embed, dw_embed = session.run([self.optimizer, self.loss, self.embed, self.wrd_embeddings],
@@ -218,43 +222,48 @@ class Doc2Vec:
                 if step > 0:
                     average_loss /= 2000
                 # The average loss is an estimate of the loss over the last 2000 batches.
-                print('Average loss at step %d: %f' % (step, average_loss))
+                print('Average loss at epoch %d step %d: %f' % (self.epoch, step, average_loss))
                 average_loss = 0
 
             if step % 10000 == 0:
                 sim = session.run(self.similarity, feed_dict=feed_dict)
+                top_k = 5  # number of nearest neighbors
+
                 for i in xrange(len(self.eval_examples)):
-                    valid_word = self.reverse_wrd_ids[self.eval_examples[i]]
-                    top_k = 8  # number of nearest neighbors
-                    nearest = (-sim[i, :]).argsort()[1:top_k + 1]
-                    log_str = "Nearest to %s:" % valid_word
-                    for k in xrange(top_k):
-                        close_word = self.reverse_wrd_ids[nearest[k]]
-                        log_str = "%s %s," % (log_str, close_word)
-                    print(log_str)
-        # update normalization
-        # self.wrd_embeddings = session.run(self.normalized_word_embeddings)
-        # self.doc_embeddings = session.run(self.normalized_doc_embeddings)
+                    valid_word = self.id2wrd[self.eval_examples[i]]
+                    print('----------------------------')
+                    print('Nearest to {}:'.format(valid_word))
+
+                    for cat in self.cat2id:
+                        lst = self.cat2id[cat]
+                        rng = min(top_k, len(lst))
+                        log_str = ""
+                        nearest = (-sim[i, lst]).argsort()[:rng]
+                        for k in xrange(rng):
+                            close_word = self.id2wrd[lst[nearest[k]]]
+                            log_str = "%s %s," % (log_str, close_word)
+                        print(log_str)
         return self
 
     def generate_batch(self):
-        docs = np.ndarray(shape=self.batch_size, dtype=np.int32)
+        docids = np.ndarray(shape=self.batch_size, dtype=np.int32)
         context = np.ndarray(shape=self.batch_size, dtype=np.int32)
         labels = np.ndarray(shape=(self.batch_size, 1), dtype=np.int32)
 
         batch_idx = 0
         while True:
-            doc = list(self.docs[self.doc_idx])
-            # shuffle(doc)
-            for i in xrange(len(doc)):
-                for ext in xrange(self.window_size):
-                    docs[batch_idx] = self.doc_idx
-                    labels[batch_idx] = doc[i]
-                    context[batch_idx] = doc[(i + ext + 1) % len(doc)]
-                    batch_idx += 1
-                    if batch_idx == self.batch_size:
-                        return docs, context, labels
             self.doc_idx = (self.doc_idx + 1) % self.doc_size
+            self.epoch += (self.doc_idx == 0)
+            doc = list(self.docs[self.doc_idx])
+            ldoc = len(doc)
+            shuffle(doc)
+            for i in xrange(ldoc):
+                docids[batch_idx] = self.doc_idx
+                labels[batch_idx] = doc[i]
+                context[batch_idx] = doc[(i + 1) % ldoc] if ldoc > 1 else 0
+                batch_idx += 1
+                if batch_idx == self.batch_size:
+                    return docids, context, labels
 
     def save(self, path):
         '''
@@ -304,31 +313,54 @@ class Doc2Vec:
 
         return estimator
 
+    def release(self, prefix=''):
+        fwrd = open(prefix + '_wrd.txt', 'w')
+        fdoc = open(prefix + '_doc.txt', 'w')
 
-a = Doc2Vec('adult_p.txt', n_steps=600001, window_size=10)
-a.fit()
+        wrd_embed, doc_embed = self.sess.run([self.wrd_embeddings, self.doc_embeddings])
 
-# print('document_size {}'.format(a.document_size))
-# print('vocabulary_size {}'.format(a.vocabulary_size))
-#
-# print(a.docs[0])
-# print(a.docs[78])
-#
-# docs, context, labels = a.generate_batch()
-# print('doc\n {} \n context\n {} \n labels\n {}'.format(docs, context, labels))
-#
-# print('length of batch: {}'.format(len(docs)))
-#
-# for idx in range(5):
-#     print('---case {}:'.format(idx))
-#     print(docs[idx])
-#     print(context[idx])
-#     print(labels[idx])
-#     print('-----')
-#
-# print(a.docs[78])
-# print('---case {}:'.format(-1))
-# print(docs[-1])
-# print(context[-1])
-# print(labels[-1])
-# print('-----')
+        for i in xrange(self.wrd_size):
+            fwrd.write(self.id2wrd[i] + ':')
+            fwrd.write(",".join(map(str, wrd_embed[i])) + '\n')
+
+        if self.doc_embed_dim > 0:
+            for i in xrange(self.doc_size):
+                fdoc.write(self.id2doc[i] + ':')
+                fdoc.write(",".join(map(str, doc_embed[i])) + '\n')
+        else:
+            for i in xrange(self.doc_size):
+                fdoc.write(self.id2doc[i] + ':')
+                wrd_sum = np.zeros(self.wrd_embed_dim)
+                for wrd in self.docs[i]:
+                    wrd_sum += wrd_embed[wrd]
+                wrd_sum /= len(self.docs[i])
+                fdoc.write(",".join(map(str, wrd_sum)) + '\n')
+
+        fwrd.close()
+        fdoc.close()
+
+
+flags = tf.app.flags
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string('input', None, 'input file')
+flags.DEFINE_string('output', None, 'output files prefix')
+flags.DEFINE_string('config', None, 'config file')
+flags.DEFINE_integer('doc_embed_dim', 0, 'document embedding size')
+flags.DEFINE_integer('wrd_embed_dim', 64, 'word embedding size')
+flags.DEFINE_integer('n_epochs', 100, 'number of epochs')
+flags.DEFINE_integer('batch_size', 1024, 'size of each batch')
+flags.DEFINE_integer('wrd_size_max', 10000, 'max size of vocabulary')
+
+version = 'wrd2vec' if FLAGS.doc_embed_dim == 0 else 'doc2vec'
+print(version, 'embedding')
+
+if FLAGS.output is None:
+    FLAGS.output = FLAGS.input.split('.')[0] + '_' + version
+
+eval_words = [line.rstrip() for line in open(FLAGS.config)] if FLAGS.config else None
+
+a = Doc2Vec(FLAGS.input, batch_size=FLAGS.batch_size, doc_embed_dim=FLAGS.doc_embed_dim,
+            wrd_embed_dim=FLAGS.wrd_embed_dim, wrd_size_max=FLAGS.wrd_size_max, eval_words=eval_words)
+a.fit(n_epochs=FLAGS.n_epochs)
+a.release(prefix=FLAGS.output)
