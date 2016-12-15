@@ -220,10 +220,9 @@ class Doc2Vec:
                 average_loss = 0
 
             if step % 10000 == 0:
-                sim, wrd_embedding = session.run([self.similarity, self.wrd_embeddings], feed_dict=feed_dict)
+                sim = session.run(self.similarity, feed_dict=feed_dict)
                 for i in xrange(len(self.eval_examples)):
                     valid_word = self.id2wrd[self.eval_examples[i]]
-                    embedding = wrd_embedding[self.eval_examples[i]]
                     top_k = 8  # number of nearest neighbors
                     nearest = (-sim[i, :]).argsort()[1:top_k + 1]
                     log_str = "Nearest to %s:" % valid_word
@@ -231,7 +230,6 @@ class Doc2Vec:
                         close_word = self.id2wrd[nearest[k]]
                         log_str = "%s %s," % (log_str, close_word)
                     print(log_str)
-                    print(embedding)
         # update normalization
         # self.wrd_embeddings = session.run(self.normalized_word_embeddings)
         # self.doc_embeddings = session.run(self.normalized_doc_embeddings)
