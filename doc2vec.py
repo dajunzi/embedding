@@ -238,7 +238,7 @@ class Doc2Vec:
         return self
 
     def generate_batch(self):
-        docs = np.ndarray(shape=self.batch_size, dtype=np.int32)
+        docids = np.ndarray(shape=self.batch_size, dtype=np.int32)
         context = np.ndarray(shape=self.batch_size, dtype=np.int32)
         labels = np.ndarray(shape=(self.batch_size, 1), dtype=np.int32)
 
@@ -250,12 +250,12 @@ class Doc2Vec:
             ldoc = len(doc)
             shuffle(doc)
             for i in xrange(ldoc):
-                docs[batch_idx] = self.doc_idx
+                docids[batch_idx] = self.doc_idx
                 labels[batch_idx] = doc[i]
                 context[batch_idx] = doc[(i + 1) % ldoc] if ldoc > 1 else 0
                 batch_idx += 1
                 if batch_idx == self.batch_size:
-                    return docs, context, labels
+                    return docids, context, labels
 
     def save(self, path):
         '''
@@ -337,7 +337,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('input', None, 'input file')
 flags.DEFINE_string('output', None, 'output files prefix')
-flags.DEFINE_integer('doc_embed_dim', 64, 'document embedding size')
+flags.DEFINE_integer('doc_embed_dim', 0, 'document embedding size')
 flags.DEFINE_integer('wrd_embed_dim', 64, 'word embedding size')
 flags.DEFINE_integer('n_epochs', 100, 'number of epochs')
 flags.DEFINE_integer('batch_size', 1024, 'size of each batch')
