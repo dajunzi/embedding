@@ -60,6 +60,7 @@ def build_dataset(filename, vocabulary_max=10000):
     doc2id = dict()
     docs_str = list()
     wrds_str = list()
+
     for line in open(filename):
         doc_id, val = line.rstrip().split(':')
         wrds = val.split(',')
@@ -115,9 +116,6 @@ class Doc2Vec:
                                                                                                    wrd_size_max)
         self.doc_size = len(self.doc2id)
         self.wrd_size = len(self.wrd2id)
-        print('doc size {}, word size {}'.format(self.doc_size, self.wrd_size))
-        print('Sample doc: doc id {}, word id {}\n words {}'.format(self.id2doc[0], self.docs[0],
-                                                                    [self.id2wrd[wrd] for wrd in self.docs[0]]))
 
         # bind params to class
         self.batch_size = batch_size
@@ -133,8 +131,37 @@ class Doc2Vec:
 
         self._init_graph()
         self.sess = tf.Session(graph=self.graph)
+        self.step = 0
         self.epoch = 0
         self.doc_idx = 0  # fetch training batch
+
+        print('doc size {}, word size {}, doc dim {}, word dim {}'.format(self.doc_size, self.wrd_size,
+                                                                          self.doc_embed_dim, self.wrd_embed_dim))
+        print('Sample doc: doc id {}, word id {}\n words {}'.format(self.id2doc[0], self.docs[0],
+                                                                    [self.id2wrd[wrd] for wrd in self.docs[0]]))
+
+        # embedding projector
+        meta_path = os.path.join(FLAGS.checkpoint_dir, 'metadata.tsv')
+        with open(meta_path, 'w') as f:
+            f.write('word\tlabel\n')
+            for idx in xrange(self.wrd_size):
+                f.write('{}\t{}\n'.format(self.id2wrd[idx], self.id2wrd[idx].split('#')[0]))
+
+        from tensorflow.contrib.tensorboard.plugins import projector
+        # Use the same LOG_DIR where you stored your checkpoint.
+        summary_writer = tf.summary.FileWriter(FLAGS.checkpoint_dir)
+
+        # Format: tensorflow/contrib/tensorboard/plugins/projector/projector_config.proto
+        config = projector.ProjectorConfig()
+
+        # You can add multiple embeddings. Here we add only one.
+        embedding = config.embeddings.add()
+        embedding.tensor_name = self.normalized.name
+        embedding.metadata_path = meta_path
+
+        # Saves a configuration file that TensorBoard will read during startup.
+        projector.visualize_embeddings(summary_writer, config)
+        # ----------
 
     def _init_graph(self):
         self.graph = tf.Graph()
@@ -183,13 +210,6 @@ class Doc2Vec:
             valid_embeddings = tf.nn.embedding_lookup(normalized_embeddings, self.eval_examples)
             self.similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True)
 
-            # normalization
-            # norm_w = tf.sqrt(tf.reduce_sum(tf.square(self.wrd_embeddings), 1, keep_dims=True))
-            # self.normalized_word_embeddings = self.wrd_embeddings / norm_w
-            #
-            # norm_d = tf.sqrt(tf.reduce_sum(tf.square(self.doc_embeddings), 1, keep_dims=True))
-            # self.normalized_doc_embeddings = self.doc_embeddings / norm_d
-
             # init op
             self.save_normalization = self.normalized.assign(normalized_embeddings)
             self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
@@ -200,7 +220,6 @@ class Doc2Vec:
         session = self.sess
         session.run(self.init_op)
 
-        step = 0
         average_loss = 0
         print("Initialized")
 
@@ -211,7 +230,7 @@ class Doc2Vec:
                          self.train_labels: batch_labels}
 
             _, l = session.run([self.optimizer, self.loss], feed_dict=feed_dict)
-            step += 1
+            self.step += 1
 
             # # debug
             # _, l, embed, dw_embed = session.run([self.optimizer, self.loss, self.embed, self.wrd_embeddings],
@@ -222,18 +241,15 @@ class Doc2Vec:
             # print(dw_embed)
 
             average_loss += l
-            if step % 2000 == 0:
-                if step > 0:
-                    average_loss /= 2000
+            if self.step % 2000 == 0:
+                average_loss /= 2000
                 # The average loss is an estimate of the loss over the last 2000 batches.
-                print('Average loss at epoch %d step %d: %f' % (self.epoch, step, average_loss))
+                print('Average loss at epoch %d step %d: %f' % (self.epoch, self.step, average_loss))
                 average_loss = 0
 
-            if step % 10000 == 0:
-                sim, normalized, _ = session.run([self.similarity, self.normalized, self.save_normalization],
-                                                 feed_dict=feed_dict)
+            if self.step % 20000 == 0:
+                sim, _ = session.run([self.similarity, self.save_normalization], feed_dict=feed_dict)
                 top_k = 5  # number of nearest neighbors
-                print(normalized[0])
 
                 for i in xrange(len(self.eval_examples)):
                     valid_word = self.id2wrd[self.eval_examples[i]]
@@ -250,13 +266,14 @@ class Doc2Vec:
                             log_str = "%s %s," % (log_str, close_word)
                         print(log_str)
 
-                    print(normalized[self.eval_examples[i]])
-                    print(sum(pow(normalized[self.eval_examples[i]], 2)))
+                self.save()
 
-                checkpoint_path = os.path.join(FLAGS.checkpoint_dir, 'model.ckpt')
-                print('writing to {}'.format(checkpoint_path))
-                self.saver.save(self.sess, checkpoint_path, global_step=step)
         return self
+
+    def save(self):
+        checkpoint_path = os.path.join(FLAGS.checkpoint_dir, 'model.ckpt')
+        print('writing to {}'.format(checkpoint_path))
+        self.saver.save(self.sess, checkpoint_path, global_step=self.step)
 
     def generate_batch(self):
         docids = np.ndarray(shape=self.batch_size, dtype=np.int32)
@@ -303,6 +320,7 @@ class Doc2Vec:
 
         fwrd.close()
         fdoc.close()
+        self.save()
 
 
 print(tf.__version__)
