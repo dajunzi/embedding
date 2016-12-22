@@ -223,7 +223,10 @@ class Doc2Vec:
         batch_idx = 0
         while True:
             self.doc_idx = (self.doc_idx + 1) % self.doc_size
-            self.epoch += (self.doc_idx == 0)
+            if self.doc_idx == 0:
+                self.epoch += 1
+                shuffle(self.docs)
+
             doc = list(self.docs[self.doc_idx])
             ldoc = len(doc)
             shuffle(doc)
