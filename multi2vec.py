@@ -234,14 +234,27 @@ class Doc2Vec:
                     print('----------------------------')
                     print('Nearest to {}:'.format(valid_word))
 
+                    # all domains
+                    print('global neighbors: ')
+                    log_str = ''
+                    nearest = (-sim[i, :]).argsort()[:top_k * 2]
+                    for k in xrange(top_k * 2):
+                        close_word = self.id2wrd[nearest[k]]
+                        distance = sim[i, nearest[k]]
+                        log_str = "%s %s(%f)," % (log_str, close_word, distance)
+                    print(log_str)
+
+                    # each domain
+                    print('domain neighbors: ')
                     for cat in self.cat2id:
                         lst = self.cat2id[cat]
                         rng = min(top_k, len(lst))
-                        log_str = ""
+                        log_str = ''
                         nearest = (-sim[i, lst]).argsort()[:rng]
                         for k in xrange(rng):
                             close_word = self.id2wrd[lst[nearest[k]]]
-                            log_str = "%s %s," % (log_str, close_word)
+                            distance = sim[i, lst[nearest[k]]]
+                            log_str = "%s %s(%f)," % (log_str, close_word, distance)
                         print(log_str)
         return self
 

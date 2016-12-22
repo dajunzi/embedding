@@ -159,6 +159,10 @@ class Doc2Vec:
         embedding.tensor_name = self.normalized.name
         embedding.metadata_path = meta_path
 
+        embedding2 = config.embeddings.add()
+        embedding2.tensor_name = self.wrd_embeddings.name
+        embedding2.metadata_path = meta_path
+
         # Saves a configuration file that TensorBoard will read during startup.
         projector.visualize_embeddings(summary_writer, config)
         # ----------
