@@ -22,6 +22,7 @@ def build_dataset(filename, vocabulary_max=10000):
     doc2id = dict()
     docs_str = list()
     wrds_str = list()
+
     for line in open(filename):
         doc_id, val = line.rstrip().split(':')
         wrds = val.split(',')
@@ -92,6 +93,7 @@ class Doc2Vec:
 
         self._init_graph()
         self.sess = tf.Session(graph=self.graph)
+        self.step = 0
         self.epoch = 0
         self.doc_idx = 0  # fetch training batch
 
@@ -99,6 +101,33 @@ class Doc2Vec:
                                                                           self.doc_embed_dim, self.wrd_embed_dim))
         print('Sample doc: doc id {}, word id {}\n words {}'.format(self.id2doc[0], self.docs[0],
                                                                     [self.id2wrd[wrd] for wrd in self.docs[0]]))
+
+        # embedding projector
+        meta_path = os.path.join(FLAGS.checkpoint_dir, 'metadata.tsv')
+        with open(meta_path, 'w') as f:
+            f.write('word\tlabel\n')
+            for idx in xrange(self.wrd_size):
+                f.write('{}\t{}\n'.format(self.id2wrd[idx], self.id2wrd[idx].split('#')[0]))
+
+        from tensorflow.contrib.tensorboard.plugins import projector
+        # Use the same LOG_DIR where you stored your checkpoint.
+        summary_writer = tf.summary.FileWriter(FLAGS.checkpoint_dir)
+
+        # Format: tensorflow/contrib/tensorboard/plugins/projector/projector_config.proto
+        config = projector.ProjectorConfig()
+
+        # You can add multiple embeddings. Here we add only one.
+        embedding = config.embeddings.add()
+        embedding.tensor_name = self.normalized.name
+        embedding.metadata_path = meta_path
+
+        embedding2 = config.embeddings.add()
+        embedding2.tensor_name = self.wrd_embeddings.name
+        embedding2.metadata_path = meta_path
+
+        # Saves a configuration file that TensorBoard will read during startup.
+        projector.visualize_embeddings(summary_writer, config)
+        # ----------
 
     def _init_graph(self):
         self.graph = tf.Graph()
@@ -118,6 +147,7 @@ class Doc2Vec:
             self.weights = tf.Variable(
                 tf.random_uniform([self.wrd_size, self.wrd_embed_dim + self.doc_embed_dim], -0.1, 0.1), name='weights')
             self.biases = tf.Variable(tf.random_uniform([self.wrd_size], -0.1, 0.1), name='biases')
+            self.normalized = tf.Variable(tf.zeros([self.wrd_size, self.wrd_embed_dim]), name='znormalized')
 
             # Embedding.
             wrd_embed = tf.nn.embedding_lookup(self.wrd_embeddings, self.train_context)
@@ -147,14 +177,15 @@ class Doc2Vec:
             self.similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True)
 
             # init op
-            self.init_op = tf.initialize_all_variables()
+            self.save_normalization = self.normalized.assign(normalized_embeddings)
+            self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
+            self.init_op = tf.global_variables_initializer()
 
     def fit(self, n_epochs=10):
         print('Start model fitting (total {} epochs)'.format(n_epochs))
         session = self.sess
         session.run(self.init_op)
 
-        step = 0
         average_loss = 0
         print("Initialized")
 
@@ -165,18 +196,17 @@ class Doc2Vec:
                          self.train_labels: batch_labels}
 
             _, l = session.run([self.optimizer, self.loss], feed_dict=feed_dict)
-            step += 1
+            self.step += 1
 
             average_loss += l
-            if step % 2000 == 0:
-                if step > 0:
-                    average_loss /= 2000
+            if self.step % 2000 == 0:
+                average_loss /= 2000
                 # The average loss is an estimate of the loss over the last 2000 batches.
-                print('Average loss at epoch %d step %d: %f' % (self.epoch, step, average_loss))
+                print('Average loss at epoch %d step %d: %f' % (self.epoch, self.step, average_loss))
                 average_loss = 0
 
-            if step % 20000 == 0:
-                sim = session.run(self.similarity, feed_dict=feed_dict)
+            if self.step % 50000 == 0:
+                sim, _ = session.run([self.similarity, self.save_normalization], feed_dict=feed_dict)
                 top_k = 5  # number of nearest neighbors
 
                 for i in xrange(len(self.eval_examples)):
@@ -210,7 +240,6 @@ class Doc2Vec:
                             log_str = "%s %s(%f)," % (log_str, close_word, distance)
                         print(log_str)
 
-            if step % 200000 == 0:
                 self.release(prefix=FLAGS.output)
 
         return self
@@ -237,6 +266,11 @@ class Doc2Vec:
                 batch_idx += 1
                 if batch_idx == self.batch_size:
                     return docids, context, labels
+
+    def save(self):
+        checkpoint_path = os.path.join(FLAGS.checkpoint_dir, 'model.ckpt')
+        print('writing to {}'.format(checkpoint_path))
+        self.saver.save(self.sess, checkpoint_path, global_step=self.step)
 
     def release(self, prefix=''):
         print('release embeddings at time {}'.format(datetime.datetime.now()))
@@ -267,6 +301,7 @@ class Doc2Vec:
         fwrd.close()
         if FLAGS.doc_if_save:
             fdoc.close()
+        self.save()
 
 
 print(tf.__version__)
@@ -276,6 +311,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('input', None, 'input file')
 flags.DEFINE_string('output', None, 'output files prefix')
 flags.DEFINE_string('config', None, 'config file')
+flags.DEFINE_string('checkpoint_dir', '/tmp/data', 'Directory to store checkpoint data.')
 flags.DEFINE_boolean('doc_if_save', False, 'whether saving doc embedding')
 flags.DEFINE_integer('doc_embed_dim', 0, 'document embedding size')
 flags.DEFINE_integer('wrd_embed_dim', 64, 'word embedding size')

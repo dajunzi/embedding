@@ -102,9 +102,9 @@ def build_dataset(filename, vocabulary_max=10000):
 
 class Doc2Vec:
     def __init__(self, filename,
-                 batch_size=1024,
-                 doc_embed_dim=128,
-                 wrd_embed_dim=128,
+                 batch_size=2000,
+                 doc_embed_dim=0,
+                 wrd_embed_dim=64,
                  wrd_size_max=10000,
                  loss_type='sampled_softmax_loss',
                  optimizer_type='Adagrad',
