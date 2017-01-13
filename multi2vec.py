@@ -103,6 +103,11 @@ class Doc2Vec:
                                                                     [self.id2wrd[wrd] for wrd in self.docs[0]]))
 
         # embedding projector
+        if not os.path.exists(FLAGS.checkpoint_dir):
+            try:
+                os.makedirs(FLAGS.checkpoint_dir)
+            except Exception as e:
+                raise e
         meta_path = os.path.join(FLAGS.checkpoint_dir, 'metadata.tsv')
         with open(meta_path, 'w') as f:
             f.write('word\tlabel\n')
