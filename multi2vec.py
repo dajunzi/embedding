@@ -140,8 +140,8 @@ class Doc2Vec:
             # Set graph level random seed
             tf.set_random_seed(SEED)
 
-            self.train_docs = tf.placeholder(tf.int32, shape=[self.batch_size])
-            self.train_context = tf.placeholder(tf.int32, shape=[self.batch_size])
+            self.train_docs = tf.placeholder(tf.int32, shape=self.batch_size)
+            self.train_context = tf.placeholder(tf.int32, shape=self.batch_size)
             self.train_labels = tf.placeholder(tf.int32, shape=[self.batch_size, 1])
 
             # Variables.
@@ -252,7 +252,7 @@ class Doc2Vec:
     def generate_batch(self):
         docids = np.ndarray(shape=self.batch_size, dtype=np.int32)
         context = np.ndarray(shape=self.batch_size, dtype=np.int32)
-        labels = np.ndarray(shape=(self.batch_size, 1), dtype=np.int32)
+        labels = np.ndarray(shape=[self.batch_size, 1], dtype=np.int32)
 
         batch_idx = 0
         while True:
